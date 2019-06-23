@@ -12,7 +12,7 @@ output: beamer_presentation
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ## Disclaimer
@@ -24,14 +24,15 @@ This work is not necessarily a representation of any past or current employer of
 - Ensuring fairness in machine learning is a key aspect especially in the financial services domain.
     - Think of a mortgage underwriting machine learning pipeline that perhaps might be sensitive to attributes such as gender and race without explicitly being trained on such features. 
     - This can potentially cause a hidden cost of capital charge from an operational risk perspective if customers are not treated fairly.
+    - Clearly a machine learning pipeline that makes unfair decisions given the same feature vector across multiple groups such as gender and race is unethical.
 
 - To overcome this potential issue we discuss a method published in the 31st conference on Neural Information Processing Systems, i.e., NeurIPS 2017. 
     - The title of that paper: "Learning to Pivot with Adversarial Networks". 
 
-- Personally I first came across the aforementioned paper in this blogpost.
+- I first came across the aforementioned NeurIPS paper in this blogpost.
     - <https://blog.godatadriven.com/fairness-in-ml>
 
-- This lecture of mine will discuss the aforementioned paper and Generative Adversarial Networks (GAN) in detail. It will also provide a R version of the code associated in the aforementioned blogpost. 
+- My lecture will discuss the aforementioned paper and Generative Adversarial Networks (GAN) in detail. It will also provide a R version of the code associated in the aforementioned blogpost. 
 
 ## Income Prediction
 
@@ -50,17 +51,17 @@ This work is not necessarily a representation of any past or current employer of
 ## Classifier and Adversarial Model
 
 - The classifier is a deep learner denoted as below.
-    - $C(x | \theta_{C}): x \rightarrow [0, 1]$
+    - $C(x | \theta_{C}): x \rightarrow y$
 
-- Note that we are not explicitly training the model on the sensitive attributes. However it is entirely possible that there might be some hidden bias within our features that perhaps act as proxies for the sensititive attributes.
+- Note that we are not explicitly training the model on the sensitive attributes. However it is entirely possible that there might be some hidden bias within our features that perhaps act as proxies for the sensitive attributes.
 
 - The sensitive attributes for this exercise are race and gender. These are binary variables.
 
 - For each of these sensitive attributes we want to ensure the following holds.
-    - $P(C(x | \theta_{C})|z = 1) = P(C(x | \theta_{C})|z = 0)$
+    - $P(C(x | \theta_{C})|z = 1) = P(C(x | \theta_{C})|z = 0) \text{    } \forall x \sim P_{X}(x)$
     
 - We introduce the concept of an adversarial deep learner model which takes in the predictions of the classifier in order to predict the sensitive attributes as below.
-    - $R(C(x | \theta_{C}) | \theta_{R}): C(x | \theta_{C}) \rightarrow [0, 1]$
+    - $R(C(x | \theta_{C}) | \theta_{R}): C(x | \theta_{C}) \rightarrow z$
 
 - In an ideal scenario the classifier will perform at its optimal level while simultaneously the adversarial model will be completely unable to predict sensitive attributes given the predictions from the optimal classifier. Therefore, $C(x | \theta_{C}^\ast)$ and $Z$ will be independent random variables.
 
@@ -290,8 +291,11 @@ D^\ast(x|\theta_{D^\ast}) &= \frac{p_{\text{data}}(x)}{p_{\text{data}}(x) + p_{G
 
 ## Classifier and Adversarial Model
 
-- The objective function of the 2 player game is bounded above as follows. 
+- In light of the above information, the objective function of the 2 player game is bounded above as follows. 
 
+- The upper bound holds when $C(x|\theta_{C}^\ast) \perp \!\!\! \perp Z$. 
+
+- This basically means that $R(C(x|\theta_{C}^\ast)|\theta_{R})$ cannot be used to predict for the sensitive attributes, i.e., we force the adversarial model towards the uninformative prior $P(Z)$.
 \tiny
 \begin{align*}
 &\max_{C(x|\theta_{C})} \min_{R(C(x|\theta_{C})|\theta_{R})} V(C(x|\theta_{C}), R(C(x|\theta_{C})|\theta_{R})) \\
@@ -304,13 +308,186 @@ D^\ast(x|\theta_{D^\ast}) &= \frac{p_{\text{data}}(x)}{p_{\text{data}}(x) + p_{G
 
 - Empirically the upper bound is not strict therefore a trade off has to be made between the classifier being optimal and fair. We shall see this in the following experiment using the "Census Income" data.
 
+## Fairness Metric
+
+- To assess a classifier's performance as optimal we can use the AUROC metric.
+
+- To assess a classifier's performance as fair we can use the p-rule metric. This is defined as follows.
+    - $\min \left(\frac{P(C(x|\theta_{C}^\ast) > \tau ? 1 : 0 | z = 1)}{P(C(x|\theta_{C}^\ast) > \tau ? 1 : 0 | z = 0)}, \frac{P(C(x|\theta_{C}^\ast) > \tau ? 1 : 0 | z = 0)}{P(C(x|\theta_{C}^\ast) > \tau ? 1 : 0 | z = 1)} \right) \geq \frac{p} {100}$
+
+- The intuition above is that at least p% of the time the optimal classifier should give the same predicted outcome label under different levels of the sensitive attribute(s), i.e., think gender and race.
+
+- The optimal classifier is deemed fair p% of the time if it's predicted outcome label does not deviate across gender or race.
+
+- Ideally one would want a high AUROC and a high p-rule. In the experiment on "Census Income" we observe that there is a trade-off to be made between having an optimal classifier and a fair classifier. 
+
+- Let me emphatically emphasize that trading off some degree of classifier performance to generate a sufficiently fair classifier, say that has a p-rule score of 80\%, is absolutely worth it. This represents a clear opportunity for machine learning to remove the hidden bias in data and make fair and simultaneously optimal decisions.
+
+## R code for the Classifier
+
+\tiny
+```{r, eval=FALSE}
+classifier.input.layer <- layer_input(shape = c(dim(standardised.X.tr)[2]), name = "classifier.input")
+
+classifier.hidden.layers <- classifier.input.layer %>%  
+  layer_dense(units = 32, activation = "relu", name = "classifier.hidden.layer.1") %>%
+  layer_dropout(rate = 0.2, name = "classifier.dropout.layer.1") %>% 
+  layer_dense(units = 32, activation = "relu", name = "classifier.hidden.layer.2") %>% 
+  layer_dropout(rate = 0.2, name = "classifier.dropout.layer.2") %>% 
+  layer_dense(units = 32, activation = "relu", name = "classifier.hidden.layer.3") %>% 
+  layer_dropout(rate = 0.2, name = "classifier.dropout.layer.3")
+
+classifier.output.layer <- classifier.hidden.layers %>%
+  layer_dense(units = 1, activation = "sigmoid", name = "classifier.output")
+
+classifier.model <- keras_model(inputs = classifier.input.layer, 
+                                outputs = classifier.output.layer)
+
+classifier.model %>% compile(optimizer = "adam",
+                             loss = "binary_crossentropy")
+
+summary(classifier.model)
+```
+
+## R code for the Adversarial model
+
+\tiny
+```{r, eval=FALSE}
+adversarial.input.layer <- layer_input(shape = c(1), name = "adversarial.input")
+
+adversarial.hidden.layers <- adversarial.input.layer %>%  
+  layer_dense(units = 32, activation = "relu", name = "adversarial.hidden.layer.1") %>%
+  layer_dense(units = 32, activation = "relu", name = "adversarial.hidden.layer.2") %>% 
+  layer_dense(units = 32, activation = "relu", name = "adversarial.hidden.layer.3")
+
+race.layer <- adversarial.hidden.layers %>%
+  layer_dense(units = 1, activation = "sigmoid", name = "race.layer.output")
+sex.layer <- adversarial.hidden.layers %>%
+  layer_dense(units = 1, activation = "sigmoid", name = "sex.layer.output")
+
+adversarial.model <- keras_model(inputs = adversarial.input.layer, 
+                                 outputs = c(race.layer, 
+                                             sex.layer))
+
+summary(adversarial.model)
+```
+
+
+## R code for training the Adversarial model
+
+\tiny
+```{r, eval=FALSE}
+unfrozen.adversarial.model <- keras_model(inputs = classifier.input.layer, 
+                                          outputs = adversarial.model(object = classifier.output.layer))
+freeze_weights(object = classifier.model,
+               from = "classifier.input",
+               to = "classifier.output")
+
+unfreeze_weights(object = adversarial.model,
+                 from = "adversarial.input",
+                 to = "race.layer.output")
+unfreeze_weights(object = adversarial.model,
+                 from = "adversarial.input",
+                 to = "sex.layer.output")
+
+unfrozen.adversarial.model %>% compile(optimizer = "adam",
+                                       loss = c("binary_crossentropy",
+                                                "binary_crossentropy"))
+ 
+summary(unfrozen.adversarial.model)
+```
+
+## R code for training the Classifier
+
+\tiny
+```{r, eval=FALSE}
+frozen.adversarial.model <- keras_model(inputs = classifier.input.layer, 
+                                        outputs = c(classifier.output.layer,
+                                                    adversarial.model(object = classifier.output.layer)))
+
+unfreeze_weights(object = classifier.model,
+                 from = "classifier.input",
+                 to = "classifier.output")
+
+freeze_weights(object = adversarial.model,
+               from = "adversarial.input",
+               to = "race.layer.output")
+freeze_weights(object = adversarial.model,
+               from = "adversarial.input",
+               to = "sex.layer.output")
+
+summary(frozen.adversarial.model)
+
+frozen.adversarial.model %>% compile(optimizer = "adam", metrics = NULL,
+                                     loss_weights = c(1, -130, -30),
+                                     loss = c("binary_crossentropy", 
+                                              "binary_crossentropy", 
+                                              "binary_crossentropy"))
+```
+
+## Initial model performance
+
+![Initial model performance with regards to optimality and fairness grouped by race](pre_train_result_race.png){height=250px}
+
+## Initial model performance 
+
+![Initial model performance with regards to optimality and fairness grouped by gender](pre_train_result_gender.png){height=250px}
+
+## R code for the main training loop
+
+\tiny
+```{r, eval=FALSE, size="tiny"}
+for (i in 1:100) {
+    freeze_weights(object = classifier.model,
+                   from = "classifier.input",
+                   to = "classifier.output")
+    unfreeze_weights(object = adversarial.model,
+                     from = "adversarial.input",
+                     to = "race.layer.output")
+    unfreeze_weights(object = adversarial.model,
+                     from = "adversarial.input",
+                     to = "sex.layer.output")
+    batch.ind <- sample(x = 1:length(tr.ind), size = 100, replace = FALSE)
+    unfrozen.adversarial.model %>% train_on_batch(x = as.matrix(standardised.X.tr)[batch.ind, ], 
+                                                  y = list(as.matrix(Z[tr.ind, "race", with = FALSE])[batch.ind, ],
+                                                           as.matrix(Z[tr.ind, "sex", with = FALSE])[batch.ind, ])) 
+    pred.test <- classifier.model %>% predict(as.matrix(standardised.X.ts))
+
+    # ... get output predictions and p-rule metrics...
+    
+    unfreeze_weights(object = classifier.model,
+                     from = "classifier.input",
+                     to = "classifier.output")
+    freeze_weights(object = adversarial.model,
+                   from = "adversarial.input",
+                   to = "race.layer.output")
+    freeze_weights(object = adversarial.model,
+                   from = "adversarial.input",
+                   to = "sex.layer.output")
+
+    batch.ind <- sample(x = 1:length(tr.ind), size = 100, replace = FALSE)
+    frozen.adversarial.model %>% train_on_batch(x = as.matrix(standardised.X.tr)[batch.ind, ],
+                                                y = list(as.matrix(data.table(y)[tr.ind])[batch.ind, ],
+                                                         as.matrix(Z[tr.ind, "race", with = FALSE])[batch.ind, ],
+                                                         as.matrix(Z[tr.ind, "sex", with = FALSE])[batch.ind, ])) 
+}
+```
+
+## Final model performance
+
+![Final model performance with regards to optimality and fairness grouped by race](post_train_result_race.png){height=250px}
+
+## Final model performance 
+
+![Final model performance with regards to optimality and fairness grouped by gender](post_train_result_gender.png){height=250px}
+
 ## Conclusion
 
 - We have shown how to use adversarial training, inspired by the GAN model, in order to provide a trade off between an optimal classifier and a fair classifier, i.e., one that is not sensitive to attributes such as race and gender.
 
-- The results shows that machine learning might actually be used to train fair decision making pipelines such that the raw data's hidden bias is not reflected in this decision making, even though sensitive attributes might have been explicitly removed.
+- The results shows that machine learning might actually be used to train fair decision making pipelines such that the data's hidden bias is not reflected in this decision making, even though sensitive attributes might have been explicitly removed.
 
-- This is a powerful and interesting way of using the idea of adversarial training derived from the GAN model for a goal that is desirable from an ethics perspective.
+- This is a powerful and interesting way of using the idea of adversarial training derived from the GAN model for a goal that is highly desirable from an ethics perspective.
 
 ## References
 
@@ -318,10 +495,11 @@ D^\ast(x|\theta_{D^\ast}) &= \frac{p_{\text{data}}(x)}{p_{\text{data}}(x) + p_{G
 2. Geron, A. (2017). Hands-On Machine Learning with Scikit-Learn & Tensorflow (O'Reilly).
 3. Radford, A., Luke, M. and Chintala, S. (2015). Unsupervised Representation Learning with Deep Convolutional Generative Adversarial Networks (<https://arxiv.org/abs/1511.06434>).
 4. Goodfellow, I., Pouget-Abadie, J., Mirza, M., Xu, B., Warde-Farley, D., Ozair, S., Courville, A., Bengio, Y. (2014). Generative Adversarial Networks (<https://arxiv.org/abs/1406.2661>).
-5. Chollet, F. (2018). Deep Learning with Python (Manning).
+5. Chollet, F., Allaire, J. J. (2018). Deep Learning with R (Manning).
 6. <https://blog.godatadriven.com/fairness-in-ml>
 7. Louppe, G., Kagan, M., Kranmer, K. (2017). Learning to Pivot with Adversarial Networks (<https://papers.nips.cc/paper/6699-learning-to-pivot-with-adversarial-networks.pdf>)
-8. <https://towardsdatascience.com/automatic-feature-engineering-using-generative-adversarial-networks-8e24b3c16bf3>
+8. Zafar, M. B., Valera, I., Rodriguez, M. G., Gummadi, K. P. (2017). Fairness Constraints: Mechanisms for Fair Classification (<https://arxiv.org/pdf/1507.05259.pdf>)
+9. <https://towardsdatascience.com/automatic-feature-engineering-using-generative-adversarial-networks-8e24b3c16bf3>
 
 ## Blog on Medium and Code on GitHub
 
@@ -331,7 +509,8 @@ D^\ast(x|\theta_{D^\ast}) &= \frac{p_{\text{data}}(x)}{p_{\text{data}}(x) + p_{G
     - <https://github.com/hamaadshah/market_risk_gan_keras>
     - <https://github.com/hamaadshah/autoencoders_pytorch>
     - <https://github.com/hamaadshah/gan_deeplearning4j>
-
+    - <https://github.com/hamaadshah/fair_ml_R>
+    
 - On Medium - search for my article titles below:
     - Automatic feature engineering using deep learning and Bayesian inference.
     - Automatic feature engineering using Generative Adversarial Networks.
