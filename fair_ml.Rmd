@@ -313,7 +313,7 @@ D^\ast(x|\theta_{D^\ast}) &= \frac{p_{\text{data}}(x)}{p_{\text{data}}(x) + p_{G
 - To assess a classifier's performance as optimal we can use the AUROC metric.
 
 - To assess a classifier's performance as fair we can use the p-rule metric. This is defined as follows.
-    - $\min \left(\frac{\mathbb{\text{1}}_{P(C(x|\theta_{C}^\ast) > \tau} | z = 1)}{\mathbb{\text{1}}_{P(C(x|\theta_{C}^\ast) > \tau} | z = 0)}, \frac{\mathbb{\text{1}}_{P(C(x|\theta_{C}^\ast) > \tau} | z = 0)}{\mathbb{\text{1}}_{P(C(x|\theta_{C}^\ast) > \tau} | z = 1)} \right) \geq \frac{p} {100}$
+    - $\min \left(\frac{\mu(\mathbb{\text{1}}_{C(x|\theta_{C}^\ast) > \tau}) | z = 1)}{\mu(\mathbb{\text{1}}_{C(x|\theta_{C}^\ast) > \tau}) | z = 0)}, \frac{\mu(\mathbb{\text{1}}_{C(x|\theta_{C}^\ast) > \tau}) | z = 0)}{\mu(\mathbb{\text{1}}_{C(x|\theta_{C}^\ast) > \tau}) | z = 1)} \right) \geq \frac{p} {100}$
 
 - The intuition above is that at least p% of the time the optimal classifier should give the same predicted outcome label under different levels of the sensitive attribute(s), i.e., think gender and race.
 
